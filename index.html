@@ -1,0 +1,872 @@
+import { useState, useRef, useEffect } from "react";
+
+const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;1,400&family=DM+Sans:wght@300;400;500&display=swap');`;
+
+const C = {
+  sand:"#F5F0E8",sandDark:"#EDE7D9",sage:"#7A9E7E",sageDark:"#5A7A5E",
+  sageLight:"#C8DBC9",sagePale:"#EAF2EB",terra:"#C4673A",terraPale:"#F5E8E0",
+  terraDark:"#9B4E2A",ink:"#2C2820",inkMid:"#5C5448",inkLight:"#8C8478",
+  parchment:"#FAF7F2",white:"#FFFFFF",gold:"#C8922A",goldPale:"#FBF3E2",
+  lavPale:"#F0EBF8",lav:"#7B6B9A",
+};
+
+const LATER_CATEGORIES = [
+  {id:"creative",  label:"Creative",   color:"#C8922A", bg:"#FBF3E2"},
+  {id:"lifeadmin", label:"Life Admin", color:"#7B6B9A", bg:"#F0EBF8"},
+  {id:"work",      label:"Work",       color:C.sageDark,bg:C.sagePale},
+  {id:"outdoor",   label:"Outdoor",    color:"#4A7C59", bg:"#E8F5EE"},
+  {id:"personal",  label:"Personal",   color:C.terraDark,bg:C.terraPale},
+  {id:"someday",   label:"Someday",    color:C.inkLight, bg:C.sandDark},
+];
+const catById = (id) => LATER_CATEGORIES.find(c=>c.id===id)||LATER_CATEGORIES[5];
+
+const BLOCK_COLORS = {
+  "deep work":  {bg:C.sagePale, border:C.sage,     text:C.sageDark,  dot:C.sage},
+  "exercise":   {bg:C.terraPale,border:C.terra,    text:C.terraDark, dot:C.terra},
+  "create":     {bg:C.goldPale, border:C.gold,     text:C.gold,      dot:C.gold},
+  "life admin": {bg:C.lavPale,  border:C.lav,      text:C.lav,       dot:C.lav},
+  "rest":       {bg:C.sandDark, border:C.inkLight, text:C.inkMid,    dot:C.inkLight},
+  "task":       {bg:C.white,    border:C.sandDark, text:C.inkMid,    dot:C.inkLight},
+};
+const bStyle = (t) => BLOCK_COLORS[t]||BLOCK_COLORS["task"];
+
+const PHASES = {
+  menstrual:   {label:"Menstrual",   emoji:"🌑",days:"Days 1–5",  color:C.terra,  bg:C.terraPale,prioritize:"Rest, reflection, admin tasks.",watchOut:"Pushing through.",eat:"Iron-rich foods, warm soups, dark chocolate."},
+  follicular:  {label:"Follicular",  emoji:"🌱",days:"Days 6–13", color:C.sage,   bg:C.sagePale, prioritize:"New plans, creative starts, hard convos.",watchOut:"Over-scheduling.",eat:"Fermented foods, leafy greens, flaxseed."},
+  ovulatory:   {label:"Ovulatory",   emoji:"☀️",days:"Days 14–16",color:"#D4A017",bg:"#FDF6E3",  prioritize:"Big asks, collaboration, visibility.",watchOut:"People-pleasing.",eat:"Raw veggies, light grains, antioxidants."},
+  earlyLuteal: {label:"Early Luteal",emoji:"🍂",days:"Days 17–22",color:"#8B6914",bg:"#FBF0DC",  prioritize:"Detail work, editing, follow-through.",watchOut:"Comparison spirals.",eat:"Complex carbs, sweet potato, nuts."},
+  lateLuteal:  {label:"Late Luteal", emoji:"🌘",days:"Days 23–28",color:"#6B5A8A",bg:"#F0EBF8",  prioritize:"Closing loops, saying no, worry windows.",watchOut:"Anxiety spiraling.",eat:"Calcium-rich foods, reduce caffeine."},
+};
+
+const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const GOALS = [
+  {icon:"🧭",title:"Internal Compass",desc:"Decisions by her own metric, not comparison."},
+  {icon:"🌲",title:"Outdoors & Space", desc:"Quarterly outdoor adventures — non-negotiable."},
+  {icon:"🛠", title:"Build & Create",  desc:"Recurring weekly creation window."},
+  {icon:"🤍",title:"Relationships",    desc:"3–5 easy, organic, reciprocal connections."},
+  {icon:"📦",title:"Contain Ambiguity",desc:"Scheduled worry windows. Defer all worrying."},
+];
+const INTENTIONS = [
+  {icon:"💛",text:"IUD out + trying to conceive"},
+  {icon:"✈️",text:"Patagonia honeymoon"},
+  {icon:"🏡",text:"Cardiff house — first right of refusal + bathroom reno + outdoor shower"},
+  {icon:"🌵",text:"ADU at Warner Springs"},
+  {icon:"🤝",text:"Seller-financed proposal to Deb & John"},
+  {icon:"📌",text:"Yoga cue bank guide on Pinterest"},
+  {icon:"🔄",text:"Weekly + quarterly reviews"},
+  {icon:"🛤️",text:"Clear work path to maternity leave"},
+];
+
+const SK = {chat:"compass-chat",week:"compass-week",targets:"compass-targets",later:"compass-later",admin:"compass-admin",reviews:"compass-reviews",dump:"compass-dump",checkin:"compass-checkin"};
+
+const BASE_SYSTEM = (phase, targets) => {
+  const p = PHASES[phase];
+  const targStr = targets ? `\nWEEKLY TASK TARGETS:\n${Object.entries(targets).map(([d,ts])=>`${d}: ${(ts||[]).join(", ")}`).join("\n")}` : "";
+  return `You are Compass — a warm, grounded personal planning agent for one specific woman.
+
+HER VALUES: Internal Compass (own metric), Outdoors & Space (quarterly adventures), Build & Create (weekly window), Relationships (3–5 reciprocal), Contain Ambiguity (worry windows).
+
+HER 2026 GOALS: IUD out + TTC, Patagonia honeymoon, Cardiff house (first refusal + reno + outdoor shower), ADU Warner Springs, seller-finance proposal to Deb & John, yoga cue bank on Pinterest, weekly + quarterly reviews, clear path to maternity leave.
+
+CURRENT PHASE: ${p.label} (${p.days}) — prioritize: ${p.prioritize} / watch: ${p.watchOut}
+
+HER DAY: Dog park ~8am. Work 9:30–10am start. Work ends ~3pm. Afternoons personal. Exercise in afternoons, never early morning.
+RECURRING: Teaches yoga Tue 4–6pm and Wed 4:15–6:15pm — always in schedule.
+WORK: 3–4 hrs true Snowflake focus/day. Protect deep work. No heroic schedules.
+AVOIDANCE PATTERNS: text messages, life admin. Shrink don't shame. One gentle flag.
+CREATE WINDOW: at least once/week. Guard fiercely.${targStr}
+
+TONE: Warm, grounded, concise. No toxic positivity. No walls of text. No shame. Mirror her language.`;
+};
+
+const WEEK_GEN_PROMPT = (phase) => `${BASE_SYSTEM(phase,null)}
+Generate a weekly schedule as JSON. Return ONLY valid JSON, no markdown.
+Keys: "Mon","Tue","Wed","Thu","Fri","Sat","Sun". Each day = array of {type,time,label}.
+Types: "deep work"|"exercise"|"create"|"life admin"|"rest"|"task"
+- Dog park every day 8am (type:"task",label:"dog park")
+- Deep work 9:30am–3pm weekdays (2–3 blocks/day)
+- ALWAYS Tue: {type:"task",time:"4–6pm",label:"teach yoga @ studio"}
+- ALWAYS Wed: {type:"task",time:"4:15–6:15pm",label:"teach yoga @ studio"}
+- Tue+Wed deep work ends by 3pm
+- ONE create block mid-week (not Tue/Wed afternoon)
+- Exercise 3pm+ at least 4 days, not Tue/Wed
+- ONE life admin block (afternoon, not Tue/Wed)
+- Weekends light — rest/outdoor/personal, no deep work
+- Max 5 blocks/day. Labels under 6 words.`;
+
+const TARGETS_PROPOSE_PROMPT = (phase, dump) => `${BASE_SYSTEM(phase,null)}
+The user just did a Monday brain dump:
+"${dump}"
+Return ONLY valid JSON, no markdown.
+Format: {"Mon":["task1"],...,"Sun":[...],"park":["..."],"later":[{"text":"...","cat":"creative|lifeadmin|work|outdoor|personal|someday"}]}
+- Max 3 tasks/day. Mon gets manageable tasks. Spread by phase: ${PHASES[phase].prioritize}
+- Avoidance items (texts, admin) → ONE slot only
+- Not actionable this week → "park"
+- Aspirational/open-ended/no urgency → "later" with a category
+- Labels under 8 words. Weekend light.`;
+
+const MORNING_PROMPT = (phase, targets, day) => `${BASE_SYSTEM(phase,targets)}
+TODAY IS ${day}. Morning check-in flow:
+1. Greet warmly (1 sentence, phase-aware).
+2. Show today's targets: ${(targets?.[day]||[]).join(", ")||"nothing set yet"}.
+3. Ask: "Still the priority, or has anything shifted?"
+4. After response: "What are three things weighing on you right now?"
+5. Sort into quick wins (under 10 min) vs park-for-later. Name one quick win before 10am.
+6. One grounding sentence, one clear first action.
+Start with step 1 now.`;
+
+const DUMP_PROMPT = (phase) => `${BASE_SYSTEM(phase,null)}
+Say: "Okay, I'm ready. Dump everything — work, life, worries, ideas, things you've been avoiding. Don't filter. Just get it all out." Then wait.`;
+
+const REVIEW_SYSTEM = (phase, targets, today) => `${BASE_SYSTEM(phase,targets)}
+TODAY IS ${today}. Leading the end-of-day review (~3pm). One question at a time. Never list all questions upfront.
+Cover in order: 1) One win (however small) 2) What actually got done 3) Energy/body check 4) Something good today 5) One thing to carry into tomorrow.
+After all 5, give a 2–3 sentence closing reflection.
+Rules: One question at a time. Match her energy. No toxic positivity. No restating everything back. The win doesn't have to be work-related.
+Start with a warm one-liner then ask about her win.`;
+
+async function callClaude(system, messages) {
+  const res = await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system,messages})
+  });
+  const data = await res.json();
+  return data.content?.find(b=>b.type==="text")?.text||"Something went sideways. Try again?";
+}
+
+function PhaseSelector({phase,setPhase}) {
+  const [open,setOpen]=useState(false);
+  const p=PHASES[phase];
+  return (
+    <div style={{position:"relative"}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{background:p.bg,border:`1px solid ${p.color}`,borderRadius:20,padding:"6px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontFamily:"'DM Sans',sans-serif",fontSize:13,color:p.color,fontWeight:500}}>
+        <span style={{fontSize:14}}>{p.emoji}</span>{p.label}<span style={{fontSize:10}}>▾</span>
+      </button>
+      {open&&(
+        <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:C.parchment,border:`1px solid ${C.sageLight}`,borderRadius:12,padding:8,zIndex:100,minWidth:200,boxShadow:"0 4px 20px rgba(0,0,0,0.08)"}}>
+          {Object.entries(PHASES).map(([key,val])=>(
+            <button key={key} onClick={()=>{setPhase(key);setOpen(false);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"8px 12px",background:phase===key?val.bg:"transparent",border:"none",borderRadius:8,cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:13,color:phase===key?val.color:C.inkMid,textAlign:"left"}}>
+              <span>{val.emoji}</span>
+              <div><div style={{fontWeight:500}}>{val.label}</div><div style={{fontSize:11,color:C.inkLight}}>{val.days}</div></div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MsgBubble({m}) {
+  return (
+    <div style={{alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"84%",background:m.role==="user"?C.sageDark:C.white,color:m.role==="user"?C.white:C.ink,borderRadius:m.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px",padding:"10px 14px",fontFamily:"'DM Sans',sans-serif",fontSize:14,lineHeight:1.7,border:m.role==="assistant"?`1px solid ${C.sandDark}`:"none",whiteSpace:"pre-wrap"}}>
+      {m.content}
+    </div>
+  );
+}
+
+function ChatInput({onSend,loading}) {
+  const [val,setVal]=useState("");
+  return (
+    <div style={{display:"flex",gap:8}}>
+      <textarea value={val} onChange={e=>setVal(e.target.value)}
+        onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();if(val.trim()){onSend(val);setVal("");}}}}
+        placeholder="What's on your mind..." rows={2}
+        style={{flex:1,borderRadius:12,border:`1px solid ${C.sageLight}`,padding:"10px 14px",fontFamily:"'DM Sans',sans-serif",fontSize:14,background:C.white,color:C.ink,resize:"none",lineHeight:1.5,outline:"none"}}/>
+      <button onClick={()=>{if(val.trim()){onSend(val);setVal("");}}} disabled={loading||!val.trim()} style={{background:C.sageDark,border:"none",borderRadius:12,padding:"10px 16px",color:C.white,cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:500,alignSelf:"stretch",opacity:(loading||!val.trim())?0.5:1}}>send</button>
+    </div>
+  );
+}
+
+// ── TODAY TAB ──────────────────────────────────────────────────────────────
+function TodayTab({phase,targets,setTargets}) {
+  const today=DAYS[Math.min(new Date().getDay()===0?6:new Date().getDay()-1,6)];
+  const todayDate=new Date().toISOString().split("T")[0];
+  const [msgs,setMsgs]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [started,setStarted]=useState(false);
+  const [mode,setMode]=useState(null); // "checkin" | "dump"
+  const [proposedTargets,setProposedTargets]=useState(null);
+  const [pendingLater,setPendingLater]=useState([]);
+  const [dumpBuffer,setDumpBuffer]=useState("");
+  const [proposing,setProposing]=useState(false);
+  const [listening,setListening]=useState(false);
+  const [voiceText,setVoiceText]=useState("");
+  const [checkinDone,setCheckinDone]=useState(false);
+  const [dumpDone,setDumpDone]=useState(false);
+  const [savedDump,setSavedDump]=useState(null);
+  const recognitionRef=useRef(null);
+  const bottomRef=useRef(null);
+  const isMonday=today==="Mon";
+  const todayTargets=targets?.[today]||[];
+
+  useEffect(()=>{
+    (async()=>{
+      try{const ci=await window.storage.get(SK.checkin);if(ci?.value){const d=JSON.parse(ci.value);if(d.date===todayDate)setCheckinDone(true);}}catch{}
+      try{const dp=await window.storage.get(SK.dump);if(dp?.value){const d=JSON.parse(dp.value);setSavedDump(d);if(d.date===todayDate)setDumpDone(true);}}catch{}
+    })();
+  },[]);
+
+  useEffect(()=>{bottomRef.current?.scrollIntoView({behavior:"smooth"});},[msgs]);
+
+  function startVoice(){
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){alert("Speech recognition isn't supported here. Try Chrome.");return;}
+    const r=new SR();r.continuous=true;r.interimResults=true;r.lang="en-US";
+    let final=voiceText;
+    r.onresult=(e)=>{
+      let interim="";
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const t=e.results[i][0].transcript;
+        if(e.results[i].isFinal){final+=(final?" ":"")+t;}else{interim=t;}
+      }
+      setVoiceText(final+(interim?" "+interim:""));
+    };
+    r.onend=()=>setListening(false);
+    r.start();recognitionRef.current=r;setListening(true);
+  }
+  function stopVoice(){recognitionRef.current?.stop();setListening(false);}
+  function sendVoiceDump(){const t=voiceText.trim();if(!t)return;setVoiceText("");send(t);}
+
+  async function startMorning(){
+    setStarted(true);setMode("checkin");setLoading(true);
+    const reply=await callClaude(MORNING_PROMPT(phase,targets,today),[{role:"user",content:"Good morning."}]).catch(()=>"Morning. What's your energy like today?");
+    setMsgs([{role:"assistant",content:reply}]);setLoading(false);
+    try{await window.storage.set(SK.checkin,JSON.stringify({date:todayDate}));}catch{}
+    setCheckinDone(true);
+  }
+
+  async function startDump(){
+    setStarted(true);setMode("dump");setLoading(true);
+    const reply=await callClaude(DUMP_PROMPT(phase),[{role:"user",content:"Ready to dump."}]).catch(()=>"I'm ready. Get it all out — don't filter.");
+    setMsgs([{role:"assistant",content:reply}]);setLoading(false);
+  }
+
+  async function send(text){
+    if(loading)return;
+    const newMsgs=[...msgs,{role:"user",content:text}];
+    setMsgs(newMsgs);setLoading(true);
+    try{
+      if(mode==="dump"){
+        const newBuf=dumpBuffer+"\n"+text;setDumpBuffer(newBuf);
+        try{await window.storage.set(SK.dump,JSON.stringify({date:todayDate,content:newBuf,msgs:newMsgs}));}catch{}
+        setSavedDump({date:todayDate,content:newBuf});setDumpDone(true);
+        const reply=await callClaude(DUMP_PROMPT(phase),newMsgs.map(m=>({role:m.role,content:m.content})));
+        setMsgs(m=>[...m,{role:"assistant",content:reply}]);
+        if(/done|that'?s (it|all)|nothing else|finish|ready/i.test(text)){await proposeTargets(newBuf);}
+      } else {
+        const reply=await callClaude(MORNING_PROMPT(phase,targets,today),newMsgs.map(m=>({role:m.role,content:m.content})));
+        setMsgs(m=>[...m,{role:"assistant",content:reply}]);
+      }
+    }catch{setMsgs(m=>[...m,{role:"assistant",content:"Connection hiccup. Try again."}]);}
+    setLoading(false);
+  }
+
+  async function proposeTargets(dump){
+    setProposing(true);
+    try{
+      const raw=await callClaude("Return only valid JSON, no markdown.",[{role:"user",content:TARGETS_PROPOSE_PROMPT(phase,dump)}]);
+      const parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());
+      setProposedTargets(parsed);
+      if(parsed.later?.length)setPendingLater(parsed.later);
+      const dayList=DAYS.map(d=>parsed[d]?.length?`${d}: ${parsed[d].join(", ")}`:null).filter(Boolean).join("\n");
+      const parkStr=parsed.park?.length?`\nParking for later: ${parsed.park.join(", ")}`:"";
+      const laterStr=parsed.later?.length?`\n\nLater box candidates:\n${parsed.later.map(l=>`- ${l.text} (${l.cat})`).join("\n")}\n\nWant me to add these to your Later Box?`:"";
+      setMsgs(m=>[...m,{role:"assistant",content:`Here's how I'd spread your week:\n\n${dayList}${parkStr}${laterStr}\n\nDoes the week plan feel right? Say "looks good" to lock it in.`}]);
+    }catch{setMsgs(m=>[...m,{role:"assistant",content:"Couldn't parse the plan — tell me what to shift."}]);}
+    setProposing(false);
+  }
+
+  async function confirmTargets(){
+    if(!proposedTargets)return;
+    const{park,later,...days}=proposedTargets;
+    setTargets(days);
+    try{await window.storage.set(SK.targets,JSON.stringify(days));}catch{}
+    setProposedTargets(null);
+    setMsgs(m=>[...m,{role:"assistant",content:"Locked in. Your week has a shape now."}]);
+  }
+
+  async function confirmLater(){
+    if(!pendingLater.length)return;
+    try{
+      const r=await window.storage.get(SK.later);
+      const existing=r?.value?JSON.parse(r.value):[];
+      const newItems=pendingLater.map(l=>({id:Date.now()+Math.random(),text:l.text,cat:l.cat||"someday",done:false}));
+      await window.storage.set(SK.later,JSON.stringify([...existing,...newItems]));
+    }catch{}
+    setPendingLater([]);
+    setMsgs(m=>[...m,{role:"assistant",content:"Added to your Later Box. They'll be there when the time is right."}]);
+  }
+
+  if(!started) return (
+    <div style={{display:"flex",flexDirection:"column",gap:16,paddingTop:8}}>
+      <div style={{fontFamily:"'Lora',serif",fontSize:20,color:C.ink,fontWeight:400}}>{isMonday?"monday.":`${today.toLowerCase()}.`}</div>
+      {todayTargets.length>0&&(
+        <div style={{background:C.white,border:`1px solid ${C.sandDark}`,borderRadius:12,padding:14}}>
+          <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:12,color:C.inkLight,marginBottom:8}}>today's targets</div>
+          {todayTargets.map((t,i)=>(
+            <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"5px 0",borderBottom:i<todayTargets.length-1?`1px solid ${C.sandDark}`:"none"}}>
+              <div style={{width:6,height:6,borderRadius:"50%",background:C.sage,marginTop:7,flexShrink:0}}/>
+              <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.inkMid,lineHeight:1.6}}>{t}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        <button onClick={startMorning} style={{background:checkinDone?C.sandDark:C.sageDark,color:checkinDone?C.inkMid:C.white,border:checkinDone?`1px solid ${C.sageLight}`:"none",borderRadius:12,padding:"14px 20px",fontFamily:"'Lora',serif",fontSize:15,cursor:"pointer",textAlign:"left",fontStyle:"italic"}}>
+          {checkinDone?"↩ go to morning check-in":"start morning check-in →"}
+        </button>
+        {isMonday&&(
+          <button onClick={startDump} style={{background:dumpDone?C.sandDark:C.terraPale,color:dumpDone?C.inkMid:C.terraDark,border:`1px solid ${dumpDone?C.sageLight:C.terra+"40"}`,borderRadius:12,padding:"14px 20px",fontFamily:"'Lora',serif",fontSize:15,cursor:"pointer",textAlign:"left",fontStyle:"italic"}}>
+            {dumpDone?"↩ go to monday brain dump":"monday brain dump →"}
+          </button>
+        )}
+        {dumpDone&&savedDump?.date===todayDate&&(
+          <div style={{background:C.parchment,border:`1px solid ${C.sandDark}`,borderRadius:10,padding:"10px 14px",fontFamily:"'DM Sans',sans-serif",fontSize:12,color:C.inkLight,lineHeight:1.6}}>
+            <span style={{fontWeight:500,color:C.inkMid,display:"block",marginBottom:4}}>last dump saved today</span>
+            <span style={{display:"-webkit-box",overflow:"hidden",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{savedDump.content?.trim().slice(0,120)}...</span>
+          </div>
+        )}
+      </div>
+      {!isMonday&&!todayTargets.length&&<p style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.inkLight,fontStyle:"italic",lineHeight:1.7,margin:0}}>No targets set yet. Do a Monday brain dump to shape your week.</p>}
+    </div>
+  );
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:10,marginBottom:12,minHeight:0}}>
+        {msgs.map((m,i)=><MsgBubble key={i} m={m}/>)}
+        {(loading||proposing)&&<div style={{alignSelf:"flex-start",background:C.white,border:`1px solid ${C.sandDark}`,borderRadius:"18px 18px 18px 4px",padding:"10px 14px",fontFamily:"'DM Sans',sans-serif",fontSize:14,color:C.inkLight}}><span style={{animation:"pulse 1.2s ease-in-out infinite"}}>{proposing?"sorting your week...":"thinking..."}</span></div>}
+        <div ref={bottomRef}/>
+      </div>
+      {proposedTargets&&(
+        <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+          <button onClick={confirmTargets} style={{background:C.sageDark,color:C.white,border:"none",borderRadius:10,padding:"8px 18px",fontFamily:"'DM Sans',sans-serif",fontSize:13,cursor:"pointer",fontWeight:500}}>looks good — lock it in</button>
+          <button onClick={()=>setProposedTargets(null)} style={{background:C.sandDark,color:C.inkMid,border:"none",borderRadius:10,padding:"8px 14px",fontFamily:"'DM Sans',sans-serif",fontSize:13,cursor:"pointer"}}>let me adjust</button>
+        </div>
+      )}
+      {pendingLater.length>0&&(
+        <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+          <button onClick={confirmLater} style={{background:C.goldPale,color:C.gold,border:`1px solid ${C.gold}50`,borderRadius:10,padding:"8px 16px",fontFamily:"'DM Sans',sans-serif",fontSize:13,cursor:"pointer",fontWeight:500}}>✦ yes — add to later box</button>
+          <button onClick={()=>setPendingLater([])} style={{background:"none",border:`1px solid ${C.sandDark}`,borderRadius:10,padding:"8px 14px",fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.inkLight,cursor:"pointer"}}>skip</button>
+        </div>
+      )}
+      {mode==="dump"&&(
+        <div style={{marginBottom:10}}>
+          {voiceText&&<div style={{background:C.white,border:`1px solid ${C.sageLight}`,borderRadius:12,padding:"10px 14px",marginBottom:8,fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.ink,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{voiceText}{listening&&<span style={{color:C.inkLight,animation:"pulse 1s infinite"}}> ●</span>}</div>}
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <button onClick={listening?stopVoice:startVoice} style={{background:listening?C.terraPale:C.sagePale,border:`1px solid ${listening?C.terra:C.sage}`,borderRadius:12,padding:"10px 16px",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:13,color:listening?C.terraDark:C.sageDark,fontWeight:500,display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:16}}>{listening?"⏹":"🎙"}</span>{listening?"stop recording":"speak your dump"}
+            </button>
+            {voiceText&&!listening&&<button onClick={sendVoiceDump} style={{background:C.sageDark,color:C.white,border:"none",borderRadius:12,padding:"10px 16px",fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:500,cursor:"pointer"}}>send it →</button>}
+          </div>
+        </div>
+      )}
+      <ChatInput onSend={send} loading={loading||proposing}/>
+    </div>
+  );
+}
+
+// ── CHAT TAB ───────────────────────────────────────────────────────────────
+function ChatTab({phase,targets}) {
+  const [msgs,setMsgs]=useState([{role:"assistant",content:"Hey. I'm here.\n\nWhat do you need from this time together?"}]);
+  const [loading,setLoading]=useState(false);
+  const [ready,setReady]=useState(false);
+  const bottomRef=useRef(null);
+  const CHIPS=[
+    {label:"Weekly compass",prompt:"Run my weekly compass. Ask me the compass check question first."},
+    {label:"Brain dump",prompt:"I need to brain dump everything on my mind. Just receive it, then help me sort it."},
+    {label:"Min viable week",prompt:"What's the minimum viable version of a good week for me right now?"},
+    {label:"Week review",prompt:"Let's do a gentle week review. What actually happened, what I want to carry forward."},
+  ];
+  useEffect(()=>{(async()=>{try{const r=await window.storage.get(SK.chat);if(r?.value){const s=JSON.parse(r.value);if(s.length)setMsgs(s);}}catch{}setReady(true);})();},[]);
+  useEffect(()=>{if(!ready)return;(async()=>{try{await window.storage.set(SK.chat,JSON.stringify(msgs));}catch{}})();},[msgs,ready]);
+  useEffect(()=>{bottomRef.current?.scrollIntoView({behavior:"smooth"});},[msgs]);
+  async function send(text){
+    if(!text.trim()||loading)return;
+    const newMsgs=[...msgs,{role:"user",content:text}];
+    setMsgs(newMsgs);setLoading(true);
+    try{const reply=await callClaude(BASE_SYSTEM(phase,targets),newMsgs.map(m=>({role:m.role,content:m.content})));setMsgs(m=>[...m,{role:"assistant",content:reply}]);}
+    catch{setMsgs(m=>[...m,{role:"assistant",content:"Connection hiccup. Try again."}]);}
+    setLoading(false);
+  }
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
+        {CHIPS.map(c=><button key={c.label} onClick={()=>send(c.prompt)} disabled={loading} style={{background:C.sandDark,border:`1px solid ${C.sageLight}`,borderRadius:20,padding:"5px 14px",fontFamily:"'DM Sans',sans-serif",fontSize:12,color:C.sageDark,cursor:"pointer",fontWeight:500}}>{c.label}</button>)}
+        {msgs.length>1&&<button onClick={async()=>{try{await window.storage.delete(SK.chat)}catch{}setMsgs([{role:"assistant",content:"Hey. I'm here.\n\nWhat do you need?"}]);}} style={{marginLeft:"auto",background:"none",border:`1px solid ${C.sandDark}`,borderRadius:20,padding:"5px 12px",fontFamily:"'DM Sans',sans-serif",fontSize:11,color:C.inkLight,cursor:"pointer"}}>clear</button>}
+      </div>
+      <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:10,marginBottom:12,minHeight:0}}>
+        {msgs.map((m,i)=><MsgBubble key={i} m={m}/>)}
+        {loading&&<div style={{alignSelf:"flex-start",background:C.white,border:`1px solid ${C.sandDark}`,borderRadius:"18px 18px 18px 4px",padding:"10px 14px",fontFamily:"'DM Sans',sans-serif",fontSize:14,color:C.inkLight}}><span style={{animation:"pulse 1.2s ease-in-out infinite"}}>thinking...</span></div>}
+        <div ref={bottomRef}/>
+      </div>
+      <ChatInput onSend={send} loading={loading}/>
+    </div>
+  );
+}
+
+// ── WEEK TAB ───────────────────────────────────────────────────────────────
+function WeekTab({phase,targets}) {
+  const [plan,setPlan]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [editDay,setEditDay]=useState(null);
+  const [editIdx,setEditIdx]=useState(null);
+  const [editVal,setEditVal]=useState({});
+  const BLOCK_TYPES=["deep work","exercise","create","life admin","rest","task"];
+  const p=PHASES[phase];
+  useEffect(()=>{(async()=>{try{const r=await window.storage.get(SK.week);if(r?.value)setPlan(JSON.parse(r.value));}catch{}})();},[]);
+  async function savePlan(pl){setPlan(pl);try{await window.storage.set(SK.week,JSON.stringify(pl));}catch{}}
+  async function generate(){
+    setLoading(true);
+    try{const raw=await callClaude("Return only valid JSON, no markdown.",[{role:"user",content:WEEK_GEN_PROMPT(phase)}]);await savePlan(JSON.parse(raw.replace(/```json|```/g,"").trim()));}
+    catch(e){console.error(e);}
+    setLoading(false);
+  }
+  function startEdit(day,idx,block){setEditDay(day);setEditIdx(idx);setEditVal({...block});}
+  async function saveEdit(){const u={...plan};u[editDay][editIdx]=editVal;await savePlan(u);setEditDay(null);setEditIdx(null);}
+  async function deleteBlock(day,idx){const u={...plan};u[day]=u[day].filter((_,i)=>i!==idx);await savePlan(u);}
+  async function addBlock(day){const u={...plan};u[day]=[...(u[day]||[]),{type:"task",time:"",label:"New block"}];await savePlan(u);startEdit(day,u[day].length-1,u[day][u[day].length-1]);}
+  return (
+    <div>
+      <div style={{background:p.bg,border:`1px solid ${p.color}30`,borderRadius:12,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+        <div style={{display:"flex",gap:10,alignItems:"center",minWidth:0}}>
+          <span style={{fontSize:20,flexShrink:0}}>{p.emoji}</span>
+          <div style={{minWidth:0}}>
+            <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:500,color:p.color}}>{p.label} · {p.days}</div>
+            <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:12,color:C.inkMid,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.prioritize}</div>
+          </div>
+        </div>
+        <button onClick={generate} disabled={loading} style={{background:C.sageDark,color:C.white,border:"none",borderRadius:10,padding:"8px 14px",fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:500,cursor:"pointer",opacity:loading?0.6:1,whiteSpace:"nowrap",flexShrink:0}}>{loading?"generating...":plan?"regenerate":"generate week"}</button>
+      </div>
+      {!plan&&!loading&&<div style={{textAlign:"center",padding:"48px 20px",color:C.inkLight,fontFamily:"'Lora',serif",fontStyle:"italic",fontSize:14,lineHeight:1.8}}>Hit "generate week" for a phase-aware plan built around your rhythms.</div>}
+      {loading&&<div style={{textAlign:"center",padding:"48px 20px",color:C.inkLight,fontFamily:"'DM Sans',sans-serif",fontSize:14,animation:"pulse 1.2s ease-in-out infinite"}}>building your week...</div>}
+      {plan&&!loading&&(
+        <>
+          <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+            {Object.entries(BLOCK_COLORS).map(([type,s])=>(
+              <div key={type} style={{display:"flex",alignItems:"center",gap:5}}>
+                <div style={{width:7,height:7,borderRadius:"50%",background:s.dot}}/>
+                <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:11,color:C.inkMid}}>{type}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:6}}>
+            {DAYS.map(day=>(
+              <div key={day} style={{minWidth:0}}>
+                <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:500,color:C.inkMid,marginBottom:6,textAlign:"center"}}>{day}</div>
+                <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                  {(plan[day]||[]).map((block,idx)=>{
+                    const bs=bStyle(block.type);
+                    if(editDay===day&&editIdx===idx) return (
+                      <div key={idx} style={{background:C.white,border:`1px solid ${C.sageLight}`,borderRadius:8,padding:8,display:"flex",flexDirection:"column",gap:5}}>
+                        <select value={editVal.type} onChange={e=>setEditVal(v=>({...v,type:e.target.value}))} style={{fontFamily:"'DM Sans',sans-serif",fontSize:11,border:`1px solid ${C.sageLight}`,borderRadius:6,padding:"3px 6px",background:C.parchment,color:C.ink}}>
+                          {BLOCK_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                        </select>
+                        <input value={editVal.time} onChange={e=>setEditVal(v=>({...v,time:e.target.value}))} placeholder="time" style={{fontFamily:"'DM Sans',sans-serif",fontSize:11,border:`1px solid ${C.sageLight}`,borderRadius:6,padding:"3px 6px",color:C.ink}}/>
+                        <input value={editVal.label} onChange={e=>setEditVal(v=>({...v,label:e.target.value}))} placeholder="label" style={{fontFamily:"'DM Sans',sans-serif",fontSize:11,border:`1px solid ${C.sageLight}`,borderRadius:6,padding:"3px 6px",color:C.ink}}/>
+                        <div style={{display:"flex",gap:4}}>
+                          <button onClick={saveEdit} style={{flex:1,background:C.sageDark,color:C.white,border:"none",borderRadius:6,padding:"4px",fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>save</button>
+                          <button onClick={()=>{setEditDay(null);setEditIdx(null);}} style={{flex:1,background:C.sandDark,color:C.inkMid,border:"none",borderRadius:6,padding:"4px",fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>cancel</button>
+                        </div>
+                      </div>
+                    );
+                    return (
+                      <div key={idx} onClick={()=>startEdit(day,idx,block)} style={{background:bs.bg,border:`1px solid ${bs.border}40`,borderRadius:8,padding:"6px 8px",cursor:"pointer"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:2}}>
+                          <div style={{width:6,height:6,borderRadius:"50%",background:bs.dot,flexShrink:0}}/>
+                          <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:10,color:bs.text,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{block.type}</span>
+                          <button onClick={e=>{e.stopPropagation();deleteBlock(day,idx);}} style={{background:"none",border:"none",color:C.inkLight,cursor:"pointer",fontSize:12,padding:0,lineHeight:1,flexShrink:0}}>×</button>
+                        </div>
+                        {block.time&&<div style={{fontFamily:"'DM Sans',sans-serif",fontSize:10,color:C.inkLight,marginBottom:2}}>{block.time}</div>}
+                        <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:11,color:bs.text,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{block.label}</div>
+                      </div>
+                    );
+                  })}
+                  {targets?.[day]?.length>0&&(
+                    <div style={{background:C.parchment,border:`1px dashed ${C.sageLight}`,borderRadius:8,padding:"6px 8px",marginTop:2}}>
+                      <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:9,color:C.inkLight,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.5px"}}>targets</div>
+                      {targets[day].map((t,i)=>(
+                        <div key={i} style={{display:"flex",gap:5,alignItems:"flex-start",marginBottom:3}}>
+                          <div style={{width:4,height:4,borderRadius:"50%",background:C.sage,marginTop:5,flexShrink:0}}/>
+                          <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:10,color:C.inkMid,lineHeight:1.4}}>{t}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button onClick={()=>addBlock(day)} style={{background:"none",border:`1px dashed ${C.sageLight}`,borderRadius:8,padding:"5px",color:C.inkLight,cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:11}}>+ add</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── LIFE ADMIN TAB ─────────────────────────────────────────────────────────
+function AdminTab({weekPlan}) {
+  const [items,setItems]=useState([]);
+  const [text,setText]=useState("");
+  const [ready,setReady]=useState(false);
+  useEffect(()=>{(async()=>{try{const r=await window.storage.get(SK.admin);if(r?.value)setItems(JSON.parse(r.value));}catch{}setReady(true);})();},[]);
+  async function save(list){setItems(list);try{await window.storage.set(SK.admin,JSON.stringify(list));}catch{}}
+  async function add(){if(!text.trim())return;await save([...items,{id:Date.now(),text:text.trim(),done:false}]);setText("");}
+  async function markDone(id){await save(items.map(x=>x.id===id?{...x,done:true}:x));}
+  async function restore(id){await save(items.map(x=>x.id===id?{...x,done:false}:x));}
+  async function remove(id){await save(items.filter(x=>x.id!==id));}
+  const weekAdminBlocks=[];
+  if(weekPlan){DAYS.forEach(day=>{(weekPlan[day]||[]).forEach(block=>{if(block.type==="life admin"&&block.label)weekAdminBlocks.push({id:`week-${day}-${block.label}`,text:block.label,time:`${day}${block.time?" · "+block.time:""}`});});});}
+  const active=items.filter(x=>!x.done);
+  const done_=items.filter(x=>x.done);
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <p style={{fontFamily:"'Lora',serif",fontStyle:"italic",color:C.inkMid,fontSize:14,margin:0,lineHeight:1.7}}>Everything that needs doing but doesn't need a whole day.</p>
+      <div style={{background:C.white,border:`1px solid ${C.sandDark}`,borderRadius:12,padding:14,display:"flex",gap:8}}>
+        <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&text.trim())add();}} placeholder="add a life admin task..."
+          style={{flex:1,border:`1px solid ${C.sageLight}`,borderRadius:8,padding:"8px 12px",fontFamily:"'DM Sans',sans-serif",fontSize:14,color:C.ink,background:C.parchment,outline:"none"}}/>
+        <button onClick={add} style={{background:C.lav,color:C.white,border:"none",borderRadius:8,padding:"8px 16px",fontFamily:"'DM Sans',sans-serif",fontSize:13,cursor:"pointer",fontWeight:500}}>add</button>
+      </div>
+      {weekAdminBlocks.length>0&&(
+        <div>
+          <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:11,color:C.inkLight,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.5px"}}>scheduled this week</div>
+          {weekAdminBlocks.map(item=>(
+            <div key={item.id} style={{background:C.lavPale,border:`1px solid ${C.lav}30`,borderRadius:10,padding:"10px 14px",display:"flex",gap:12,alignItems:"center",marginBottom:6}}>
+              <div style={{width:7,height:7,borderRadius:"50%",background:C.lav,flexShrink:0}}/>
+              <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.ink,flex:1}}>{item.text}</span>
+              <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:11,color:C.lav}}>{item.time}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {active.length>0&&(
+        <div>
+          <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:11,color:C.inkLight,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.5px"}}>to do</div>
+          {active.map(item=>(
+            <div key={item.id} style={{background:C.white,border:`1px solid ${C.sandDark}`,borderRadius:10,padding:"11px 14px",display:"flex",gap:12,alignItems:"center",marginBottom:6}}>
+              <div style={{width:7,height:7,borderRadius:"50%",border:`1.5px solid ${C.lav}`,flexShrink:0}}/>
+              <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.ink,flex:1}}>{item.text}</span>
+              <button onClick={()=>markDone(item.id)} style={{background:C.lavPale,color:C.lav,border:`1px solid ${C.lav}30`,borderRadius:8,padding:"4px 12px",fontFamily:"'DM Sans',sans-serif",fontSize:12,cursor:"pointer",fontWeight:500}}>done</button>
+              <button onClick={()=>remove(item.id)} style={{background:"none",border:"none",color:C.inkLight,cursor:"pointer",fontSize:16,padding:0}}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {!active.length&&!weekAdminBlocks.length&&ready&&<p style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.inkLight,fontStyle:"italic",lineHeight:1.7,margin:0}}>Nothing here yet. Add anything that's been living in your head as "I really should..."</p>}
+      {done_.length>0&&(
+        <div>
+          <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:11,color:C.inkLight,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.5px"}}>done ✓</div>
+          {done_.map(item=>(
+            <div key={item.id} style={{background:C.sagePale,borderRadius:8,padding:"9px 14px",display:"flex",gap:10,alignItems:"center",opacity:0.65,marginBottom:6}}>
+              <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.inkMid,textDecoration:"line-through",flex:1}}>{item.text}</span>
+              <button onClick={()=>restore(item.id)} style={{background:"none",border:"none",fontSize:11,color:C.inkLight,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>restore</button>
+              <button onClick={()=>remove(item.id)} style={{background:"none",border:"none",color:C.inkLight,cursor:"pointer",fontSize:14}}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── DAILY REVIEW TAB ───────────────────────────────────────────────────────
+function ReviewTab({phase,targets}) {
+  const today=DAYS[Math.min(new Date().getDay()===0?6:new Date().getDay()-1,6)];
+  const todayKey=new Date().toISOString().split("T")[0];
+  const [msgs,setMsgs]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [started,setStarted]=useState(false);
+  const [saved,setSaved]=useState(false);
+  const [pastReviews,setPastReviews]=useState([]);
+  const [showPast,setShowPast]=useState(false);
+  const [todayDone,setTodayDone]=useState(false);
+  const bottomRef=useRef(null);
+  useEffect(()=>{
+    (async()=>{
+      try{const r=await window.storage.get(SK.reviews);const all=r?.value?JSON.parse(r.value):{};setPastReviews(Object.entries(all).sort((a,b)=>b[0].localeCompare(a[0])));if(all[todayKey])setTodayDone(true);}catch{}
+    })();
+  },[]);
+  useEffect(()=>{bottomRef.current?.scrollIntoView({behavior:"smooth"});},[msgs]);
+  async function startReview(){
+    setStarted(true);setLoading(true);
+    const reply=await callClaude(REVIEW_SYSTEM(phase,targets,today),[{role:"user",content:"I'm ready to close out the day."}]).catch(()=>"Hey. Let's close out the day.\n\nWhat's one thing that went well today?");
+    setMsgs([{role:"assistant",content:reply}]);setLoading(false);
+  }
+  async function send(text){
+    if(loading)return;
+    const newMsgs=[...msgs,{role:"user",content:text}];
+    setMsgs(newMsgs);setLoading(true);
+    try{
+      const reply=await callClaude(REVIEW_SYSTEM(phase,targets,today),newMsgs.map(m=>({role:m.role,content:m.content})));
+      setMsgs(m=>[...m,{role:"assistant",content:reply}]);
+      if(newMsgs.length>=8&&!saved)await saveReview(newMsgs);
+    }catch{setMsgs(m=>[...m,{role:"assistant",content:"Connection hiccup. Try again."}]);}
+    setLoading(false);
+  }
+  async function saveReview(msgList){
+    try{
+      const r=await window.storage.get(SK.reviews);
+      const all=r?.value?JSON.parse(r.value):{};
+      const summary=msgList.filter(m=>m.role==="user").map(m=>m.content).join(" | ");
+      all[todayKey]={date:todayKey,day:today,msgs:msgList,summary};
+      await window.storage.set(SK.reviews,JSON.stringify(all));
+      setSaved(true);setTodayDone(true);
+      setPastReviews(Object.entries(all).sort((a,b)=>b[0].localeCompare(a[0])));
+    }catch{}
+  }
+  if(!started) return (
+    <div style={{display:"flex",flexDirection:"column",gap:16,paddingTop:8}}>
+      <div style={{fontFamily:"'Lora',serif",fontSize:20,color:C.ink,fontWeight:400}}>end of day.</div>
+      <p style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.inkMid,lineHeight:1.7,margin:0}}>5 minutes. One question at a time. Close the day with clarity.</p>
+      {todayDone?(
+        <div style={{background:C.sagePale,border:`1px solid ${C.sageLight}`,borderRadius:12,padding:"14px 16px",fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.sageDark}}>
+          ✓ Today's review is done.
+          <button onClick={startReview} style={{display:"block",marginTop:8,background:"none",border:"none",padding:0,color:C.inkLight,fontSize:12,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>do another one anyway →</button>
+        </div>
+      ):(
+        <button onClick={startReview} style={{background:C.sageDark,color:C.white,border:"none",borderRadius:12,padding:"14px 20px",fontFamily:"'Lora',serif",fontSize:15,cursor:"pointer",textAlign:"left",fontStyle:"italic"}}>close out today →</button>
+      )}
+      {pastReviews.length>0&&(
+        <div style={{marginTop:8}}>
+          <button onClick={()=>setShowPast(s=>!s)} style={{background:"none",border:"none",padding:0,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:C.inkLight,cursor:"pointer"}}>{showPast?"hide":"show"} past reviews ({pastReviews.length})</button>
+          {showPast&&(
+            <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
+              {pastReviews.map(([key,r])=>(
+                <div key={key} style={{background:C.white,border:`1px solid ${C.sandDark}`,borderRadius:10,padding:"12px 14px"}}>
+                  <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:500,color:C.inkMid,marginBottom:6}}>{r.day} · {key}</div>
+                  <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:12,color:C.inkLight,lineHeight:1.6,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{r.summary}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      {saved&&<div style={{background:C.sagePale,borderRadius:8,padding:"8px 14px",marginBottom:8,fontFamily:"'DM Sans',sans-serif",fontSize:12,color:C.sageDark}}>✓ Review saved.</div>}
+      <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:10,marginBottom:12,minHeight:0}}>
+        {msgs.map((m,i)=><MsgBubble key={i} m={m}/>)}
+        {loading&&<div style={{alignSelf:"flex-start",background:C.white,border:`1px solid ${C.sandDark}`,borderRadius:"18px 18px 18px 4px",padding:"10px 14px",fontFamily:"'DM Sans',sans-serif",fontSize:14,color:C.inkLight}}><span style={{animation:"pulse 1.2s ease-in-out infinite"}}>thinking...</span></div>}
+        <div ref={bottomRef}/>
+      </div>
+      {!saved&&msgs.length>=4&&<div style={{marginBottom:8}}><button onClick={()=>saveReview(msgs)} style={{background:"none",border:`1px solid ${C.sageLight}`,borderRadius:8,padding:"6px 14px",fontFamily:"'DM Sans',sans-serif",fontSize:12,color:C.sageDark,cursor:"pointer"}}>save review</button></div>}
+      <ChatInput onSend={send} loading={loading}/>
+    </div>
+  );
+}
+
+// ── LATER BOX TAB ──────────────────────────────────────────────────────────
+function LaterTab({phase,targets}) {
+  const [items,setItems]=useState([]);
+  const [text,setText]=useState("");
+  const [cat,setCat]=useState("someday");
+  const [ready,setReady]=useState(false);
+  const [suggesting,setSuggesting]=useState(false);
+  const [suggestion,setSuggestion]=useState(null);
+  const [filterCat,setFilterCat]=useState("all");
+  useEffect(()=>{(async()=>{try{const r=await window.storage.get(SK.later);if(r?.value)setItems(JSON.parse(r.value));}catch{}setReady(true);})();},[]);
+  async function save(list){setItems(list);try{await window.storage.set(SK.later,JSON.stringify(list));}catch{}}
+  async function add(){if(!text.trim())return;await save([...items,{id:Date.now(),text:text.trim(),cat,done:false}]);setText("");setCat("someday");}
+  async function markDone(id){await save(items.map(x=>x.id===id?{...x,done:true}:x));}
+  async function restore(id){await save(items.map(x=>x.id===id?{...x,done:false}:x));}
+  async function remove(id){await save(items.filter(x=>x.id!==id));}
+  async function getSuggestion(){
+    const active=items.filter(x=>!x.done);if(!active.length)return;
+    setSuggesting(true);setSuggestion(null);
+    const weekLoad=Object.values(targets||{}).reduce((n,d)=>n+(d?.length||0),0);
+    const prompt=`User has a later box. Week load: ${weekLoad} tasks. Phase: ${PHASES[phase].label} — ${PHASES[phase].prioritize}\nLater box: ${active.map(x=>`"${x.text}" (${x.cat})`).join(", ")}\nPick ONE item that fits this week's energy and phase. 2 sentences max. Name the item.`;
+    try{const reply=await callClaude(BASE_SYSTEM(phase,targets),[{role:"user",content:prompt}]);setSuggestion(reply);}
+    catch{setSuggestion("Couldn't reach the agent. Try again.");}
+    setSuggesting(false);
+  }
+  const active=items.filter(x=>!x.done);
+  const done_=items.filter(x=>x.done);
+  const filtered=filterCat==="all"?active:active.filter(x=>x.cat===filterCat);
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <p style={{fontFamily:"'Lora',serif",fontStyle:"italic",color:C.inkMid,fontSize:14,margin:0,lineHeight:1.7}}>Things you want to do one day. No pressure. Just parked here.</p>
+      <div style={{background:C.white,border:`1px solid ${C.sandDark}`,borderRadius:12,padding:14,display:"flex",flexDirection:"column",gap:10}}>
+        <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&text.trim())add();}} placeholder="someday I want to..."
+          style={{border:`1px solid ${C.sageLight}`,borderRadius:8,padding:"8px 12px",fontFamily:"'DM Sans',sans-serif",fontSize:14,color:C.ink,background:C.parchment,outline:"none"}}/>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          {LATER_CATEGORIES.map(c=>(
+            <button key={c.id} onClick={()=>setCat(c.id)} style={{background:cat===c.id?c.bg:"transparent",border:`1px solid ${cat===c.id?c.color:C.sandDark}`,borderRadius:20,padding:"4px 12px",fontFamily:"'DM Sans',sans-serif",fontSize:12,color:cat===c.id?c.color:C.inkLight,cursor:"pointer",fontWeight:cat===c.id?500:400}}>{c.label}</button>
+          ))}
+          <button onClick={add} style={{marginLeft:"auto",background:C.sageDark,color:C.white,border:"none",borderRadius:8,padding:"6px 16px",fontFamily:"'DM Sans',sans-serif",fontSize:13,cursor:"pointer",fontWeight:500}}>add</button>
+        </div>
+      </div>
+      {active.length>0&&<button onClick={getSuggestion} disabled={suggesting} style={{background:C.goldPale,border:`1px solid ${C.gold}50`,borderRadius:10,padding:"10px 16px",fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.gold,cursor:"pointer",fontWeight:500,textAlign:"left",opacity:suggesting?0.6:1}}>{suggesting?"thinking...":"✦ what should I pull in this week?"}</button>}
+      {suggestion&&<div style={{background:C.goldPale,border:`1px solid ${C.gold}40`,borderRadius:12,padding:"12px 16px",fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.inkMid,lineHeight:1.7}}>{suggestion}<button onClick={()=>setSuggestion(null)} style={{display:"block",marginTop:8,background:"none",border:"none",fontSize:11,color:C.inkLight,cursor:"pointer",padding:0,fontFamily:"'DM Sans',sans-serif"}}>dismiss</button></div>}
+      {active.length>0&&(
+        <div>
+          <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+            <button onClick={()=>setFilterCat("all")} style={{background:filterCat==="all"?C.sandDark:"transparent",border:`1px solid ${C.sandDark}`,borderRadius:20,padding:"3px 12px",fontFamily:"'DM Sans',sans-serif",fontSize:11,color:C.inkMid,cursor:"pointer"}}>all</button>
+            {LATER_CATEGORIES.filter(c=>active.some(x=>x.cat===c.id)).map(c=>(
+              <button key={c.id} onClick={()=>setFilterCat(c.id)} style={{background:filterCat===c.id?c.bg:"transparent",border:`1px solid ${filterCat===c.id?c.color:C.sandDark}`,borderRadius:20,padding:"3px 12px",fontFamily:"'DM Sans',sans-serif",fontSize:11,color:filterCat===c.id?c.color:C.inkLight,cursor:"pointer"}}>{c.label}</button>
+            ))}
+          </div>
+          {filtered.map(item=>{
+            const cat_=catById(item.cat);
+            return (
+              <div key={item.id} style={{background:C.white,border:`1px solid ${C.sandDark}`,borderRadius:10,padding:"11px 14px",display:"flex",gap:12,alignItems:"center",marginBottom:6}}>
+                <span style={{background:cat_.bg,color:cat_.color,borderRadius:12,padding:"2px 9px",fontFamily:"'DM Sans',sans-serif",fontSize:11,fontWeight:500,whiteSpace:"nowrap"}}>{cat_.label}</span>
+                <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.ink,flex:1}}>{item.text}</span>
+                <button onClick={()=>markDone(item.id)} style={{background:"none",border:"none",color:C.sage,cursor:"pointer",fontSize:14,padding:"0 4px"}}>✓</button>
+                <button onClick={()=>remove(item.id)} style={{background:"none",border:"none",color:C.inkLight,cursor:"pointer",fontSize:16,padding:0}}>×</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {!active.length&&ready&&<p style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.inkLight,fontStyle:"italic",lineHeight:1.7,margin:0}}>Nothing here yet. What's been living rent-free in your "one day..." thoughts?</p>}
+      {done_.length>0&&(
+        <div>
+          <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:11,color:C.inkLight,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.5px"}}>done ✓</div>
+          {done_.map(item=>(
+            <div key={item.id} style={{background:C.sagePale,borderRadius:8,padding:"9px 14px",display:"flex",gap:10,alignItems:"center",opacity:0.65,marginBottom:6}}>
+              <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.inkMid,textDecoration:"line-through",flex:1}}>{item.text}</span>
+              <button onClick={()=>restore(item.id)} style={{background:"none",border:"none",fontSize:11,color:C.inkLight,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>restore</button>
+              <button onClick={()=>remove(item.id)} style={{background:"none",border:"none",color:C.inkLight,cursor:"pointer",fontSize:14}}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── WORRY TAB ──────────────────────────────────────────────────────────────
+function WorryTab() {
+  const [worries,setWorries]=useState([
+    {id:1,text:"What if we can't conceive easily?",revisit:"2026-04-01",done:false},
+    {id:2,text:"Cardiff house — what if they don't give us first right of refusal?",revisit:"2026-03-25",done:false},
+  ]);
+  const [text,setText]=useState("");
+  const [revisit,setRevisit]=useState("");
+  function add(){if(!text.trim())return;setWorries(w=>[...w,{id:Date.now(),text:text.trim(),revisit,done:false}]);setText("");setRevisit("");}
+  function toggle(id){setWorries(w=>w.map(x=>x.id===id?{...x,done:!x.done}:x));}
+  function remove(id){setWorries(w=>w.filter(x=>x.id!==id));}
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <p style={{fontFamily:"'Lora',serif",fontStyle:"italic",color:C.inkMid,fontSize:14,margin:0,lineHeight:1.7}}>Park it here. It's safe. You don't have to hold it right now.</p>
+      <div style={{background:C.white,border:`1px solid ${C.sandDark}`,borderRadius:12,padding:16}}>
+        <textarea value={text} onChange={e=>setText(e.target.value)} rows={2} placeholder="What's circling..."
+          style={{width:"100%",border:`1px solid ${C.sageLight}`,borderRadius:8,padding:"8px 12px",fontFamily:"'DM Sans',sans-serif",fontSize:14,color:C.ink,background:C.parchment,resize:"none",outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <label style={{fontFamily:"'DM Sans',sans-serif",fontSize:12,color:C.inkLight}}>revisit:</label>
+          <input type="date" value={revisit} onChange={e=>setRevisit(e.target.value)} style={{border:`1px solid ${C.sageLight}`,borderRadius:8,padding:"5px 10px",fontFamily:"'DM Sans',sans-serif",fontSize:12,color:C.ink,background:C.parchment}}/>
+          <button onClick={add} style={{marginLeft:"auto",background:C.terra,color:C.white,border:"none",borderRadius:8,padding:"6px 16px",fontFamily:"'DM Sans',sans-serif",fontSize:13,cursor:"pointer"}}>park it</button>
+        </div>
+      </div>
+      {worries.filter(w=>!w.done).map(w=>(
+        <div key={w.id} style={{background:C.terraPale,border:`1px solid ${C.terra}20`,borderRadius:10,padding:"12px 14px",display:"flex",gap:12,alignItems:"flex-start"}}>
+          <input type="checkbox" checked={false} onChange={()=>toggle(w.id)} style={{marginTop:3,accentColor:C.terra,cursor:"pointer"}}/>
+          <div style={{flex:1}}>
+            <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.ink,lineHeight:1.6}}>{w.text}</div>
+            {w.revisit&&<div style={{fontSize:11,color:C.terra,marginTop:4}}>revisit {w.revisit}</div>}
+          </div>
+          <button onClick={()=>remove(w.id)} style={{background:"none",border:"none",color:C.inkLight,cursor:"pointer",fontSize:16,padding:0}}>×</button>
+        </div>
+      ))}
+      {worries.filter(w=>w.done).length>0&&(
+        <div>
+          <div style={{fontFamily:"'DM Sans',sans-serif",fontSize:12,color:C.inkLight,marginBottom:8}}>resolved</div>
+          {worries.filter(w=>w.done).map(w=>(
+            <div key={w.id} style={{background:C.sagePale,borderRadius:8,padding:"10px 14px",display:"flex",gap:10,alignItems:"center",opacity:0.7,marginBottom:6}}>
+              <input type="checkbox" checked={true} onChange={()=>toggle(w.id)} style={{accentColor:C.sage,cursor:"pointer"}}/>
+              <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.inkMid,textDecoration:"line-through",flex:1}}>{w.text}</span>
+              <button onClick={()=>remove(w.id)} style={{background:"none",border:"none",color:C.inkLight,cursor:"pointer",fontSize:14}}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── GOALS TAB ──────────────────────────────────────────────────────────────
+function GoalsTab() {
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:24}}>
+      <div>
+        <h3 style={{fontFamily:"'Lora',serif",fontSize:18,color:C.ink,margin:"0 0 12px",fontWeight:400}}>North Stars</h3>
+        {GOALS.map((g,i)=>(
+          <div key={i} style={{background:C.white,border:`1px solid ${C.sandDark}`,borderRadius:12,padding:"12px 16px",display:"flex",gap:14,alignItems:"flex-start",marginBottom:8}}>
+            <span style={{fontSize:20,lineHeight:1.4}}>{g.icon}</span>
+            <div><div style={{fontFamily:"'DM Sans',sans-serif",fontWeight:500,fontSize:14,color:C.ink,marginBottom:3}}>{g.title}</div><div style={{fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.inkMid,lineHeight:1.6}}>{g.desc}</div></div>
+          </div>
+        ))}
+      </div>
+      <div>
+        <h3 style={{fontFamily:"'Lora',serif",fontSize:18,color:C.ink,margin:"0 0 12px",fontWeight:400}}>2026 Intentions</h3>
+        {INTENTIONS.map((g,i)=>(
+          <div key={i} style={{background:C.sagePale,borderRadius:10,padding:"10px 14px",display:"flex",gap:12,alignItems:"center",fontFamily:"'DM Sans',sans-serif",fontSize:13,color:C.inkMid,lineHeight:1.5,marginBottom:6}}>
+            <span>{g.icon}</span><span>{g.text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── ROOT ───────────────────────────────────────────────────────────────────
+export default function App() {
+  const [tab,setTab]=useState("today");
+  const [phase,setPhase]=useState("follicular");
+  const [targets,setTargets]=useState(null);
+  const [weekPlan,setWeekPlan]=useState(null);
+
+  useEffect(()=>{
+    (async()=>{
+      try{const r=await window.storage.get(SK.targets);if(r?.value)setTargets(JSON.parse(r.value));}catch{}
+      try{const r=await window.storage.get(SK.week);if(r?.value)setWeekPlan(JSON.parse(r.value));}catch{}
+    })();
+  },[]);
+
+  const setAndSaveTargets=async(t)=>{setTargets(t);try{await window.storage.set(SK.targets,JSON.stringify(t));}catch{}};
+
+  const TABS=[
+    {id:"today",label:"Today"},
+    {id:"chat",label:"Chat"},
+    {id:"week",label:"Week view"},
+    {id:"admin",label:"Life admin"},
+    {id:"review",label:"Daily review"},
+    {id:"worry",label:"Worry box"},
+    {id:"later",label:"Later box"},
+    {id:"goals",label:"Goals"},
+  ];
+
+  return (
+    <div style={{background:C.sand,minHeight:"100vh",fontFamily:"'DM Sans',sans-serif"}}>
+      <style>{FONTS}{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${C.sageLight};border-radius:4px}textarea:focus,input:focus{box-shadow:0 0 0 2px ${C.sageLight}}`}</style>
+      <div style={{maxWidth:820,margin:"0 auto",padding:"0 0 40px"}}>
+        <div style={{padding:"20px 20px 0",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div>
+            <h1 style={{fontFamily:"'Lora',serif",fontSize:26,color:C.ink,margin:"0 0 2px",fontWeight:400,letterSpacing:"-0.5px"}}>Weekly Compass</h1>
+            <p style={{fontFamily:"'DM Sans',sans-serif",fontSize:12,color:C.inkLight,margin:0}}>your weekly planning space</p>
+          </div>
+          <PhaseSelector phase={phase} setPhase={setPhase}/>
+        </div>
+        <div style={{display:"flex",gap:0,padding:"16px 20px 0",borderBottom:`1px solid ${C.sandDark}`,overflowX:"auto"}}>
+          {TABS.map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 12px",background:"none",border:"none",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:13,fontWeight:tab===t.id?500:400,color:tab===t.id?C.sageDark:C.inkLight,borderBottom:`2px solid ${tab===t.id?C.sageDark:"transparent"}`,transition:"all 0.15s",whiteSpace:"nowrap"}}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div style={{padding:"20px",height:tab==="chat"||tab==="today"||tab==="review"?"calc(100vh - 210px)":"auto",display:"flex",flexDirection:"column"}}>
+          {tab==="today"  && <TodayTab  phase={phase} targets={targets} setTargets={setAndSaveTargets}/>}
+          {tab==="chat"   && <ChatTab   phase={phase} targets={targets}/>}
+          {tab==="week"   && <WeekTab   phase={phase} targets={targets}/>}
+          {tab==="admin"  && <AdminTab  weekPlan={weekPlan}/>}
+          {tab==="review" && <ReviewTab phase={phase} targets={targets}/>}
+          {tab==="worry"  && <WorryTab/>}
+          {tab==="later"  && <LaterTab  phase={phase} targets={targets}/>}
+          {tab==="goals"  && <GoalsTab/>}
+        </div>
+      </div>
+    </div>
+  );
+}
